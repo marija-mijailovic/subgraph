@@ -1,0 +1,39 @@
+specVersion: 0.0.5
+schema:
+  file: ./schema.graphql
+dataSources:
+  - kind: ethereum
+    name: LiquidityRewardDistrubtion
+    network: sepolia
+    source:
+      address: "0xafcfa0a08af1d2f94cdc2f3217f59db0e2fd00af"
+      abi: LiquidityRewardDistrubtion
+      startBlock: 4884896
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Claimed
+        - EpochAdded
+        - EpochRemoved
+        - OwnershipTransferCanceled
+        - OwnershipTransferRequested
+        - OwnershipTransferred
+      abis:
+        - name: LiquidityRewardDistrubtion
+          file: ./abis/LiquidityRewardDistrubtion.json
+      eventHandlers:
+        - event: Claimed(address,uint256,uint256)
+          handler: handleClaimed
+        - event: EpochAdded(uint256,bytes32,string)
+          handler: handleEpochAdded
+        - event: EpochRemoved(uint256)
+          handler: handleEpochRemoved
+        - event: OwnershipTransferCanceled(indexed address,indexed address)
+          handler: handleOwnershipTransferCanceled
+        - event: OwnershipTransferRequested(indexed address,indexed address)
+          handler: handleOwnershipTransferRequested
+        - event: OwnershipTransferred(indexed address,indexed address)
+          handler: handleOwnershipTransferred
+      file: ./src/liquidity-reward-distrubtion.ts
