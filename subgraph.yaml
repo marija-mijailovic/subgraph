@@ -1,4 +1,6 @@
 specVersion: 0.0.5
+features:
+  - ipfsOnEthereumContracts
 schema:
   file: ./schema.graphql
 dataSources:
@@ -14,12 +16,10 @@ dataSources:
       apiVersion: 0.0.7
       language: wasm/assemblyscript
       entities:
-        - Claimed
-        - EpochAdded
-        - EpochRemoved
-        - OwnershipTransferCanceled
-        - OwnershipTransferRequested
-        - OwnershipTransferred
+        - Snapshot
+        - UserRewardDistribution
+        - UserRewardDistributionMetaData
+        - UserData
       abis:
         - name: LiquidityRewardDistrubtion
           file: ./abis/LiquidityRewardDistrubtion.json
@@ -30,10 +30,20 @@ dataSources:
           handler: handleEpochAdded
         - event: EpochRemoved(uint256)
           handler: handleEpochRemoved
-        - event: OwnershipTransferCanceled(indexed address,indexed address)
-          handler: handleOwnershipTransferCanceled
-        - event: OwnershipTransferRequested(indexed address,indexed address)
-          handler: handleOwnershipTransferRequested
-        - event: OwnershipTransferred(indexed address,indexed address)
-          handler: handleOwnershipTransferred
       file: ./src/liquidity-reward-distrubtion.ts
+templates:
+  - name: UserRewardDistributionMetaData
+    kind: file/ipfs
+    mapping:
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      file: ./src/liquidity-reward-distrubtion.ts
+      handler: handleMetaData
+      entities:
+        - Snapshot
+        - UserRewardDistribution
+        - UserRewardDistributionMetaData
+        - UserData
+      abis:
+        - name: LiquidityRewardDistrubtion
+          file: ./abis/LiquidityRewardDistrubtion.json

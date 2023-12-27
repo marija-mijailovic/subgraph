@@ -2,106 +2,147 @@ import {
   Claimed as ClaimedEvent,
   EpochAdded as EpochAddedEvent,
   EpochRemoved as EpochRemovedEvent,
-  OwnershipTransferCanceled as OwnershipTransferCanceledEvent,
-  OwnershipTransferRequested as OwnershipTransferRequestedEvent,
-  OwnershipTransferred as OwnershipTransferredEvent
 } from "../generated/LiquidityRewardDistrubtion/LiquidityRewardDistrubtion"
 import {
-  Claimed,
-  EpochAdded,
-  EpochRemoved,
-  OwnershipTransferCanceled,
-  OwnershipTransferRequested,
-  OwnershipTransferred
+  Snapshot,
+  UserRewardDistribution,
+  UserData,
+  UserRewardDistributionMetaData
 } from "../generated/schema"
+import {
+  log,
+  dataSource,
+  store,
+  Bytes,
+  Address,
+  BigInt
+} from '@graphprotocol/graph-ts'
+import { UserRewardDistributionMetaData as UserRewardDistributionMetadataTemplate } from '../generated/templates';
+import { getDistributionData } from './helpers/rewardDistribution';
 
 export function handleClaimed(event: ClaimedEvent): void {
-  let entity = new Claimed(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
-  entity.claimant = event.params.claimant
-  entity.week = event.params.week
-  entity.balance = event.params.balance
+  let snapshotId = event.params.week;
+  let address = event.params.claimant.toHexString();
+  let amountToClaim = event.params.balance;
 
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
+  let snapshot = Snapshot.load(snapshotId.toString());
+  if (snapshot == null) {
+    log.warning("There is no snapshot", []);
+    return;
+  }
 
-  entity.save()
+  let key = snapshot.ipfsCid + "-" + address;
+  log.warning("The key to find user data {}", [key]);
+
+  let user = UserRewardDistribution.load(address);
+  if (user == null) {
+    log.warning("The user {} is not eligible for claim", [address]);
+    return;
+  }
+
+  let userMetadata = UserData.load(key);
+  if (userMetadata == null) {
+    log.warning("The USER {}", [key]);
+    return;
+  }
+
+  if (userMetadata.initialAmount.lt(amountToClaim)) {
+    log.warning("There is no enough amount for claim: available({}) < requested({})", [userMetadata.initialAmount.toString(), amountToClaim.toString()]);
+    return;
+  }
+  userMetadata.claimedAmount = userMetadata.claimedAmount.plus(amountToClaim);
+  userMetadata.claimed = true;
+
+  user.amountOfTokenAvailableForClaim = user.amountOfTokenAvailableForClaim.minus(userMetadata.initialAmount);
+  user.amountOfClaimedToken = user.amountOfClaimedToken.plus(amountToClaim);
+  user.save();
+
+  userMetadata.save();
 }
 
 export function handleEpochAdded(event: EpochAddedEvent): void {
-  let entity = new EpochAdded(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
-  entity.Epoch = event.params.Epoch
-  entity.merkleRoot = event.params.merkleRoot
-  entity._ipfs = event.params._ipfs
+  let snapshotId = event.params.Epoch; //primary key is epochId
+  let ipfsCid = event.params._ipfs;
+  log.warning("The ipf cid {}", [ipfsCid.toString()]);
 
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
+  let snapshot = new Snapshot(snapshotId.toString());
+  snapshot.blockNumber = event.block.number;
+  snapshot.blockTimestamp = event.block.timestamp;
+  snapshot.ipfsCid = ipfsCid;
+  UserRewardDistributionMetadataTemplate.create(ipfsCid);
 
-  entity.save()
+  snapshot.save();
+}
+
+export function handleMetaData(content: Bytes): void {
+  let distributionsData = getDistributionData(content);
+  if (distributionsData.length == 0) {
+    log.warning("There is a problem with geting data from ipfs", []);
+    return;
+  }
+
+  let userRewardDistributionMetadata = new UserRewardDistributionMetaData(dataSource.stringParam());
+  for (let index = 0; index < distributionsData.length; index++) {
+    let distribution = distributionsData[index];
+    log.warning("Distribution data to save {} {}", [distribution.amount, distribution.address]);
+    let address = changetype<Address>(Address.fromHexString(distribution.address));
+    let key = dataSource.stringParam() + "-" + address.toHexString();
+    log.warning("The key for user data {}", [key]);
+    let userData = new UserData(key);
+    userData.address = address;
+    userData.initialAmount = BigInt.fromString(distribution.amount);
+    userData.claimedAmount = BigInt.zero();
+    userData.claimed = false;
+    userRewardDistributionMetadata.save();
+    userData.user = userRewardDistributionMetadata.id;
+    userData.save();
+
+    let userReward = UserRewardDistribution.load(address.toHexString());
+    if (userReward == null) {
+      userReward = new UserRewardDistribution(address.toHexString());
+      userReward.amountOfClaimedToken = BigInt.zero();
+      userReward.amountOfTokenAvailableForClaim = BigInt.fromString(distribution.amount);
+    } else {
+      userReward.amountOfTokenAvailableForClaim = userReward.amountOfTokenAvailableForClaim.plus(BigInt.fromString(distribution.amount));
+    }
+    userReward.save();
+  }
 }
 
 export function handleEpochRemoved(event: EpochRemovedEvent): void {
-  let entity = new EpochRemoved(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
-  entity.epoch = event.params.epoch
+  let snapshotId = event.params.epoch;
+  let snapshot = Snapshot.load(snapshotId.toString());
+  if (snapshot == null) {
+    log.warning("There is no snapshot with epoch {}", [snapshotId.toString()]);
+    return;
+  }
 
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
+  let ipfsCid = snapshot.ipfsCid;
+  let distributionsData = UserRewardDistributionMetaData.load(ipfsCid);
+  if (distributionsData == null) {
+    log.warning("There is a problem with geting data from ipfs", []);
+    return;
+  }
 
-  entity.save()
-}
-
-export function handleOwnershipTransferCanceled(
-  event: OwnershipTransferCanceledEvent
-): void {
-  let entity = new OwnershipTransferCanceled(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
-  entity.from = event.params.from
-  entity.to = event.params.to
-
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
-
-  entity.save()
-}
-
-export function handleOwnershipTransferRequested(
-  event: OwnershipTransferRequestedEvent
-): void {
-  let entity = new OwnershipTransferRequested(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
-  entity.from = event.params.from
-  entity.to = event.params.to
-
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
-
-  entity.save()
-}
-
-export function handleOwnershipTransferred(
-  event: OwnershipTransferredEvent
-): void {
-  let entity = new OwnershipTransferred(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  )
-  entity.from = event.params.from
-  entity.to = event.params.to
-
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
-
-  entity.save()
+  let users = distributionsData.users.load();
+  for (let index = 0; index < users.length; index++) {
+    const data = users.at(index);
+    let userReward = UserRewardDistribution.load(data.address.toString());
+    if (userReward == null) {
+      log.warning("The user {} does not have distribution", [data.address.toString()]);
+      return;
+    }
+    if (data.claimed) {
+      log.warning("The user has claimed amount {} for the epoch {}", [data.initialAmount.toString(), snapshotId.toString()]);
+      return;
+    }
+    userReward.amountOfTokenAvailableForClaim = userReward.amountOfTokenAvailableForClaim.minus(data.initialAmount);
+    if (userReward.amountOfTokenAvailableForClaim.equals(BigInt.zero())) {
+      log.warning("Deleting user {}", [data.address.toString()]);
+      store.remove("UserRewardDistribution", data.address.toString());
+    } else {
+      userReward.save();
+    }
+    store.remove("UserData", data.id);
+  }
 }

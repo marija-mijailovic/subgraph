@@ -1,54 +1,26 @@
-type Claimed @entity(immutable: true) {
-  id: Bytes!
-  claimant: Bytes! # address
-  week: BigInt! # uint256
-  balance: BigInt! # uint256
+type Snapshot @entity {
+  id: ID! #epochId
   blockNumber: BigInt!
   blockTimestamp: BigInt!
-  transactionHash: Bytes!
+  ipfsCid: UserRewardDistributionMetaData!
 }
 
-type EpochAdded @entity(immutable: true) {
-  id: Bytes!
-  Epoch: BigInt! # uint256
-  merkleRoot: Bytes! # bytes32
-  _ipfs: String! # string
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
+type UserRewardDistribution @entity {
+  id: ID! # address
+  amountOfClaimedToken: BigInt!
+  amountOfTokenAvailableForClaim: BigInt!
 }
 
-type EpochRemoved @entity(immutable: true) {
-  id: Bytes!
-  epoch: BigInt! # uint256
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
+type UserRewardDistributionMetaData @entity {
+  id: ID!
+  users: [UserData!]! @derivedFrom(field: "user")
 }
 
-type OwnershipTransferCanceled @entity(immutable: true) {
-  id: Bytes!
-  from: Bytes! # address
-  to: Bytes! # address
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
-}
-
-type OwnershipTransferRequested @entity(immutable: true) {
-  id: Bytes!
-  from: Bytes! # address
-  to: Bytes! # address
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
-}
-
-type OwnershipTransferred @entity(immutable: true) {
-  id: Bytes!
-  from: Bytes! # address
-  to: Bytes! # address
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
+type UserData @entity {
+  id: ID!
+  address: Bytes!
+  initialAmount: BigInt!
+  claimedAmount: BigInt!
+  claimed: Boolean!
+  user: UserRewardDistributionMetaData!
 }
